@@ -1,0 +1,289 @@
+  public class Class501
+    {
+        public enum State
+        {
+            standby,
+            runing,
+            pause,
+            stop
+        }
+        enum Trigger
+        {
+            start,
+            pause,
+            stop,
+            handlePausee,
+            handleStop,
+            handleStandby
+        }
+        public enum MeasureAction
+        {
+            Default,
+            Local,
+            Cal
+        }
+
+
+        State _state = State.standby;
+        StateMachine<State, Trigger> stateMachine;
+        //设置一个带参数的事件，这个事件是CallDialed的类型
+        StateMachine<State, Trigger>.TriggerWithParameters<MeasureAction> ExecuteMeasureTrigger;
+
+        public Class501()
+        {
+            this.stateMachine = new StateMachine<State, Trigger>(_state, FiringMode.Queued);
+
+            this.stateMachine.Configure(State.standby)
+                .Permit(Trigger.start, State.runing)
+                .PermitReentry(Trigger.handleStop)
+                // .Permit(Trigger.pause, State.pause)
+                .Permit(Trigger.stop, State.stop);
+
+            ExecuteMeasureTrigger = stateMachine.SetTriggerParameters<MeasureAction>(Trigger.start);
+
+
+            this.stateMachine.Configure(State.runing)
+                .Permit(Trigger.pause, State.pause)
+                .Permit(Trigger.stop, State.stop)
+                .Permit(Trigger.handleStandby, State.standby);
+
+            this.stateMachine.Configure(State.stop)
+                .Permit(Trigger.handleStop, State.standby);
+
+            this.stateMachine.Configure(State.pause)
+                 .PermitReentry(Trigger.pause)
+                 .Permit(Trigger.handlePausee, State.runing);
+
+            //转换完成触发
+            this.stateMachine.OnTransitioned(OnTransitioned);
+
+            Debug.WriteLine(UmlDotGraph.Format(stateMachine.GetInfo()));
+        }
+
+        private void OnTransitioned(StateMachine<State, Trigger>.Transition obj)
+        {
+            Debug.WriteLine(string.Format(Name + " from [{0}] to [{1}] trigger <{2}>", obj.Source, obj.Destination, obj.Trigger));
+        }
+
+        public void Start(MeasureAction action)
+        {
+            stateMachine.Fire(ExecuteMeasureTrigger, action);
+        }
+
+        public void Stop()
+        {
+            stateMachine.Fire(Trigger.stop);
+        }
+
+        public void Pause()
+        {
+            stateMachine.Fire(Trigger.pause);
+        }
+
+        public void Standby()
+        {
+            stateMachine.Fire(Trigger.handleStandby);
+        }
+
+        public void FirePause()
+        {
+
+
+            stateMachine.Fire(Trigger.pause);
+
+            Task.Run(() =>
+            {
+                while (true)
+                {
+                    if (stateMachine.State == State.runing)
+                    {
+                        break;
+                    }
+                    Debug.WriteLine(string.Format(Name + "Pause"));
+                    Thread.Sleep(500);
+                }
+            });
+        }
+        public void FireStop()
+        {
+            stateMachine.Fire(Trigger.stop);
+            Task.Run(() =>
+            {
+                while (true)
+                {
+                    if (stateMachine.State == State.standby)
+                    {
+                        break;
+                    }
+                    Debug.WriteLine(string.Format(Name + "Stop"));
+                    Thread.Sleep(500);
+                }
+            });
+        }
+        public bool HandleStop()
+        {
+
+            stateMachine.Fire(Trigger.handleStop);
+            return true;
+        }
+        public bool HandlePause()
+        {
+            //if(stateMachine.IsInState)
+            stateMachine.Fire(Trigger.handlePausee);
+            return true;
+        }
+
+        public State CurrentState
+        {
+            get
+            {
+                return stateMachine.State;
+            }
+        }
+
+
+
+        public string Name { get; set; }
+        public Sample CurSample { get; set; }
+        public void Caltest()
+        {
+
+            Start(MeasureAction.Cal);
+            for (int i = 0; i < 3; i++)
+            {
+                Console.WriteLine("---------------");
+                Thread.Sleep(1000);
+            }
+            Standby();
+
+            Start(MeasureAction.Cal);
+            for (int i = 0; i < 3; i++)
+            {
+                Console.WriteLine("---------------");
+                Thread.Sleep(1000);
+            }
+            Pause();
+            HandlePause();
+
+            Stop();
+            HandleStop();
+
+            Standby();
+        }
+
+
+        public void MeasureTest()
+        {
+            for (int i = 0; i < 5; i++)
+            {
+
+                Start(MeasureAction.Cal);
+
+                Thread.Sleep(5000);
+                Standby();
+
+            }
+
+
+        }
+
+
+        public void Measure(MeasureAction ma)
+        {
+            if (!stateMachine.CanFire(Trigger.start))
+                return;
+
+            stateMachine.Fire(Trigger.start);
+
+
+            for (int i = 0; i < 60; i++)
+            {
+                if (i == 10)
+                {
+                    Debug.WriteLine(String.Format("{0} {1}", this.Name, "样本测试"));
+
+                }
+                if (i == 20)
+                {
+                    var d = DateTime.Now;
+                    Debug.WriteLine(String.Format("{0} {1} 管{2}架{3}", this.Name, "测试 ", d.Minute, d.Second));
+                    GetMeasureSample();
+
+                }
+                if (i == 30)
+                {
+                    Debug.WriteLine(String.Format("{0} {1}", this.Name, "测试拍照"));
+                    CurSample.MState = MeasureState.shorting;
+                }
+                if (i == 40)
+                {
+                    Debug.WriteLine(String.Format("{0} {1}", this.Name, "测试完成"));
+                    CurSample.MState = MeasureState.finish;
+                }
+
+                if (stateMachine.IsInState(State.pause))
+                {
+
+                    while (true)
+                    {
+                        if (stateMachine.IsInState(State.runing))
+                            break;
+                        Thread.Sleep(100);
+                    }
+                }
+                if (stateMachine.IsInState(State.stop))
+                {
+                    CurSample.MState = MeasureState.finish;
+                    return;
+                }
+
+                Thread.Sleep(100);
+            }
+
+            if(stateMachine.IsInState(State.runing))
+            {
+                if (stateMachine.CanFire(Trigger.handleStandby))
+                         stateMachine.Fire(Trigger.handleStandby);
+
+            }
+           
+
+        }
+
+        public void Measure1(MeasureAction ma)
+        {
+            if (!stateMachine.CanFire(Trigger.start))
+                return;
+
+
+            stateMachine.Fire(Trigger.start);
+
+            Debug.WriteLine(String.Format("{0} {1}", this.Name, "样本测试"));
+            Thread.Sleep(2000);
+
+            var d = DateTime.Now;
+            Debug.WriteLine(String.Format("{0} {1} 管{2}架{3}", this.Name, "测试 ", d.Minute, d.Second));
+            GetMeasureSample();
+            Thread.Sleep(2000);
+
+            //FirePause();
+            Debug.WriteLine(String.Format("{0} {1}", this.Name, "测试拍照"));
+            CurSample.MState = MeasureState.shorting;
+            Thread.Sleep(2000);
+
+            // FireStop();
+            Debug.WriteLine(String.Format("{0} {1}", this.Name, "测试完成"));
+            CurSample.MState = MeasureState.finish;
+            Thread.Sleep(2000);
+
+            stateMachine.Fire(Trigger.handleStandby);
+
+        }
+
+        private void GetMeasureSample()
+        {
+            CurSample = new Sample();
+            // CurSample.MState = MeasureState.regist;
+            CurSample.MState = MeasureState.prepare;
+        }
+    }
