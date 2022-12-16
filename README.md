@@ -1,7 +1,8 @@
 # EquipmentController
 
-仪器状态管理和控制的示例
+仪器状态管理和控制的示例 使用Stateless来进行状态管理
 
+![ui](https://user-images.githubusercontent.com/20536182/208009122-2991382d-8e35-41d4-a410-addd727a0a3b.png)
 
 流水线控制多个设备，实现多个仪器的控制和管理。流水线有启动，暂停和停止的控制功能。
 仪器控制器是控制单独一个仪器的动作，当仪器错误时可以恢复仪器。
