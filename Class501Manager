@@ -1,0 +1,247 @@
+public class Class501Manager
+    {
+
+       public  enum State
+        {
+            standby,
+            runing,
+            pause,
+            join
+
+        }
+        enum Trigger
+        {
+            start,
+            pause,
+            stop,
+            suspand,
+            joinToRuing,
+            joinToStandby
+        }
+        public enum MeasureAction
+        {
+            Default,
+            Local,
+            Cal
+        }
+        public string Name { get; set; }
+
+        Class501 c5 = new Class501();
+
+        State _state = State.standby;
+        StateMachine<State, Trigger> stateMachine;
+        //设置一个带参数的事件，这个事件是CallDialed的类型
+        StateMachine<State, Trigger>.TriggerWithParameters<MeasureAction> ExecuteMeasureTrigger;
+
+        public Class501Manager(string equName)
+        {
+            c5.Name = equName;
+            Name = "Manager>"+equName;
+            this.stateMachine = new StateMachine<State, Trigger>(_state);
+
+            this.stateMachine.Configure(State.standby)
+
+                .Permit(Trigger.start, State.runing);
+
+            ExecuteMeasureTrigger = stateMachine.SetTriggerParameters<MeasureAction>(Trigger.start);
+
+            //  ExecuteMeasureTrigger = stateMachine.SetTriggerParameters<MeasureAction>(Trigger.start);
+
+
+            this.stateMachine.Configure(State.runing)
+                .Permit(Trigger.stop, State.standby)
+                 .Permit(Trigger.pause, State.pause)
+                 .Permit(Trigger.suspand,State.join)
+               ;
+            this.stateMachine.Configure(State.pause)
+                 .Permit(Trigger.stop, State.standby)
+                 .Permit(Trigger.start, State.runing);
+
+            this.stateMachine.Configure(State.join)
+                .Permit(Trigger.joinToRuing, State.runing)
+                .Permit(Trigger.joinToStandby, State.standby);
+
+            //转换完成触发
+            this.stateMachine.OnTransitioned(OnTransitioned);
+
+
+            Debug.WriteLine(UmlDotGraph.Format(stateMachine.GetInfo()));
+
+            Task.Run(() =>
+            {
+
+                while (true)
+                {
+                    if(this.stateMachine.State == State.runing)
+                    { 
+                        if(c5.CurrentState== Class501.State.pause)
+                        {
+                            stateMachine.Fire(Trigger.suspand);
+                          
+                        }
+                        if (c5.CurrentState == Class501.State.stop)
+                        {
+                            stateMachine.Fire(Trigger.suspand);
+
+                        }
+                    }
+                    Thread.Sleep(10);
+                }
+
+            }
+           );
+
+        }
+
+        private void OnTransitioned(StateMachine<State, Trigger>.Transition obj)
+        {
+            Debug.WriteLine(string.Format(Name+" from [{0}] to [{1}] trigger <{2}>", obj.Source, obj.Destination, obj.Trigger));
+        }
+
+
+        public void StartD(MeasureAction ac)
+        {
+            
+
+            if (!stateMachine.CanFire(Trigger.start))
+            {
+                return;
+            }
+
+            //Start
+            stateMachine.Fire(ExecuteMeasureTrigger, ac);
+
+            if(stateMachine.State == State.pause)
+            {
+                return;
+            }
+
+            Task.Run(() =>
+            {
+                while (true)
+                {
+                    if (stateMachine.IsInState(State.pause) )
+                    {
+                        Thread.Sleep(100);
+                        continue;
+                    }
+                    if (stateMachine.State == State.join)
+                    {
+                        Thread.Sleep(100);
+                        continue;
+                    }
+                    if (stateMachine.State == State.standby)
+                    {
+                        Thread.Sleep(100);
+                        return;
+                    }
+
+                    //启动
+                    if (c5.CurSample == null)
+                    { 
+                        c5.Measure(Class501.MeasureAction.Default);
+                    }
+                    else
+                    {
+                        if (c5.CurSample.MState == MeasureState.finish)
+                        {
+                            c5.Measure(Class501.MeasureAction.Default);
+                        }
+                    }
+                    Thread.Sleep(100);
+                }
+            }
+           );
+        }
+
+        public void PauseD()
+        {
+
+
+            if (!stateMachine.CanFire(Trigger.pause))
+            {
+                return;
+            }
+            while (true)
+            {
+                if (c5.CurrentState == Class501.State.standby)
+                {
+
+                    stateMachine.Fire(Trigger.pause);
+                    return;
+
+                }
+                Thread.Sleep(10);
+            }
+
+
+        }
+        public void Stop()
+        {
+            if (!stateMachine.CanFire(Trigger.stop))
+            {
+                return;
+            }
+            while (true)
+            {
+                if (c5.CurrentState == Class501.State.standby)
+                {
+
+                    stateMachine.Fire(Trigger.stop);
+                    return;
+
+                }
+                Thread.Sleep(10);
+            }
+        }
+
+        internal void FirePause()
+        {
+            c5.FirePause();
+        }
+        internal void FireStop()
+        {
+            c5.FireStop();
+        }
+
+        public void HdPause()
+        {
+
+            var r=c5.HandlePause();
+            if(r)
+            {
+                if(stateMachine.IsInState(State.join))
+                stateMachine.Fire(Trigger.joinToRuing);
+            }
+        }
+        public void HdStop()
+        {
+            var r = c5.HandleStop();
+            if (r)
+            {
+                //流水线工作中，恢复流水线
+                if(!stateMachine.IsInState( State.standby))
+                    stateMachine.Fire(Trigger.joinToStandby);
+            }
+        }
+
+
+
+
+        public void a111Test()
+        {
+            StartD(MeasureAction.Default);
+
+            Thread.Sleep(3000);
+
+            Stop();
+
+        }
+
+        public  bool isInState(State st)
+        {
+            return stateMachine.IsInState(st);
+        }
+
+       
+    }
