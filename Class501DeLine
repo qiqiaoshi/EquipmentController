@@ -1,0 +1,171 @@
+    internal class Class501DeLine3ActionMulControl : IClass501DeLine3Action
+    {
+        enum LState
+        {
+            LStandby,
+            Lruning,
+            Lpause
+        }
+
+        enum LTrigger
+        {
+            LineStart,
+            LineStop,
+            LinePause
+        }
+
+        LState _state = LState.LStandby;
+        StateMachine<LState, LTrigger> stateMachine;
+        //设置一个带参数的事件，这个事件是CallDialed的类型
+        StateMachine<LState, LTrigger>.TriggerWithParameters<MeasureAction> ExecuteMeasureTrigger;
+
+        public string Name { get; set; }
+
+        public List<Class501Manager> EquList = new List<Class501Manager>();
+
+        public Class501DeLine3ActionMulControl()
+        {
+            this.stateMachine = new StateMachine<LState, LTrigger>(_state);
+
+            this.stateMachine.Configure(LState.LStandby)
+                .Permit(LTrigger.LineStart, LState.Lruning);
+
+            ExecuteMeasureTrigger = stateMachine.SetTriggerParameters<MeasureAction>(LTrigger.LineStart);
+
+            //ExecuteMeasureTrigger = stateMachine.SetTriggerParameters<MeasureAction>(Trigger.start);
+
+            this.stateMachine.Configure(LState.Lruning)
+                .Permit(LTrigger.LineStop, LState.LStandby)
+                .Permit(LTrigger.LinePause, LState.Lpause);
+
+            this.stateMachine.Configure(LState.Lpause)
+                .Permit(LTrigger.LineStop, LState.LStandby)
+                .Permit(LTrigger.LineStart, LState.Lruning);
+
+
+            //转换完成触发
+            this.stateMachine.OnTransitioned(OnTransitioned);
+
+            Task.Run(() =>
+            {
+
+                while (true)
+                {
+                    if (this.stateMachine.State == LState.Lruning)
+                    {
+
+                        foreach (var item in EquList)
+                        {
+                            //如果仪器错误了
+                            if (item.isInState(Class501Manager.State.join))
+                            {
+
+                                // 暂停流水线
+                                PauseLine();
+                                while (true)
+                                {
+                                    if (item.isInState(Class501Manager.State.runing))
+                                    {
+                                        item.PauseD();
+                                        break;
+                                    }
+                                    if (item.isInState(Class501Manager.State.standby))
+                                    {
+                                        StopLine();
+                                        break;
+                                    }
+                                }
+                                break;
+                            }
+
+                        }
+
+                    }
+                    Thread.Sleep(10);
+                }
+
+            }
+           );
+
+        }
+
+        public void StartLine()
+        {
+            if (stateMachine.CanFire(LTrigger.LineStart))
+            {
+
+                foreach (var item in EquList)
+                {
+                    item.StartD(MeasureAction.Default);
+                    while (true)
+                    {
+                        if (item.isInState(Class501Manager.State.runing))
+                        { break; }
+                    }
+
+                }
+                stateMachine.Fire(LTrigger.LineStart);
+            }
+
+
+        }
+
+        public void PauseLine()
+        {
+
+
+            if (stateMachine.CanFire(LTrigger.LinePause))
+            {
+
+                foreach (var item in EquList)
+                {
+                    if (item.isInState(Class501Manager.State.runing))
+                    {
+                        item.PauseD();
+                        while (true)
+                        {
+                            if (item.isInState(Class501Manager.State.pause))
+                            { break; }
+                        }
+
+                    }
+
+                }
+                stateMachine.Fire(LTrigger.LinePause);
+            }
+
+        }
+
+        public void StopLine()
+        {
+            if (stateMachine.CanFire(LTrigger.LineStop))
+            {
+                foreach (var item in EquList)
+                {
+
+                    item.Stop();
+                    while (true)
+                    {
+                        if (item.isInState(Class501Manager.State.standby))
+                        { 
+                            break; 
+                        }
+                    }
+
+                }
+                stateMachine.Fire(LTrigger.LineStop);
+            }
+
+        }
+
+
+        private void OnTransitioned(StateMachine<LState, LTrigger>.Transition obj)
+        {
+            Debug.WriteLine(string.Format(Name + " from [{0}] to [{1}] trigger <{2}>", obj.Source, obj.Destination, obj.Trigger));
+        }
+
+
+
+
+
+    }
