@@ -1,6 +1,6 @@
 # EquipmentController
 
-仪器状态管理和控制的示例 使用Stateless来进行状态管理
+仪器状态管理和控制的示例 使用#Stateless来进行状态管理
 
 ![ui](https://user-images.githubusercontent.com/20536182/208009122-2991382d-8e35-41d4-a410-addd727a0a3b.png)
 
